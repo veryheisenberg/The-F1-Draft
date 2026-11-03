@@ -26,6 +26,10 @@ main{max-width:1200px;margin:0 auto;padding:20px}
 .reel{margin:18px auto;max-width:560px;padding:22px;border:2px solid var(--c,#333);background:#000b;font-size:44px;font-weight:900;font-style:italic;color:var(--c,#fff);clip-path:polygon(0 0,calc(100% - 22px) 0,100% 22px,100% 100%,0 100%)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
 .card{position:relative;background:linear-gradient(160deg,#1c1c24,#101015);border:1px solid var(--line);border-left:6px solid var(--c);padding:14px;clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,0 100%)}
+.card.sel{box-shadow:inset 0 0 0 2px var(--red),0 0 22px #e1060055;background:linear-gradient(160deg,#2a1215,#14100f)}
+.chip{padding:7px 14px;border:1px solid var(--line);background:#0008;color:var(--txt);cursor:pointer;font:700 13px inherit;font-family:inherit}
+.chip.on{background:var(--txt);color:#000}
+.sbq{background:#0008;border:1px solid var(--line);color:var(--txt);padding:8px 12px;font:14px inherit;font-family:inherit;min-width:200px}
 .card.pick{cursor:pointer;transition:transform .12s}
 .card.pick:hover{transform:translateY(-4px);box-shadow:inset 0 0 0 2px var(--red)}
 .ovr{font-size:46px;font-weight:900;font-style:italic;line-height:1;color:var(--gold)}
@@ -47,6 +51,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 td,th{padding:6px 8px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
 th{color:var(--mut);font-size:12px}
 tr.me{background:#e1060033;font-weight:800}
+tr.bot{background:#a855f733;font-weight:800}
 tr.dnf td{color:#666}
 h2{margin-bottom:10px}
 .dot{display:inline-block;width:9px;height:9px;margin-right:7px;background:var(--c)}
@@ -63,6 +68,7 @@ details.panel>summary{cursor:pointer;font-size:20px;font-weight:800;list-style:n
 details.panel>summary::after{content:"Show ▾";font-size:13px;color:var(--red)}
 details.panel[open]>summary::after{content:"Hide ▴"}
 details.panel[open]>summary{margin-bottom:14px}
+.dnfbox{border-left:4px solid var(--red);background:#e1060022;padding:10px 14px;margin:0 0 12px}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 @media(max-width:800px){.slots{grid-template-columns:repeat(2,1fr)}.two{grid-template-columns:1fr}.pw{font-size:60px}.reel{font-size:30px}}
 </style>
@@ -70,10 +76,10 @@ details.panel[open]>summary{margin-bottom:14px}
 <body>
 <header><h1>F1 <b>LUCKY DRAFT</b> 2026</h1><button class="btn" id="restart">New draft</button></header>
 <main id="app"></main>
-
+ 
 <script>
 // ---------- DATA ----------
-const COL={"Red Bull":"#3671c6","McLaren":"#ff8000","Ferrari":"#e8002d","Mercedes":"#27f4d2","Aston Martin":"#229971","Racing Bulls":"#6692ff","Haas":"#b6babd","Alpine":"#ff87bc","Williams":"#64c4ff","Audi":"#c0392b","Cadillac":"#d4af37","Your Team":"#e10600",
+const COL={"Red Bull":"#3671c6","McLaren":"#ff8000","Ferrari":"#e8002d","Mercedes":"#27f4d2","Aston Martin":"#229971","Racing Bulls":"#6692ff","Haas":"#b6babd","Alpine":"#ff87bc","Williams":"#64c4ff","Audi":"#c0392b","Cadillac":"#d4af37","Your Team":"#e10600","Bot Racing":"#a855f7",
 "1988 McLaren":"#e8e8e8","2023 Red Bull":"#1e41ff","2016 Mercedes":"#00d2be","2004 Ferrari":"#dc0000","1992 Williams":"#0a4ea3","2009 Brawn GP":"#d9f21a","2010 Red Bull":"#2d4fb3","2012 Lotus":"#c9a227","1976 Ferrari":"#c8102e",
 "1996 Williams":"#2a6fd1","1998 McLaren":"#9aa0a6","2005 Renault":"#ffd800","2019 Haas":"#c9ccd1","2014 Caterham":"#0b8a4a","2009 Toyota":"#f5f5f5","2002 Minardi":"#e6c300","1990 Tyrrell":"#3a78d8","2008 Honda":"#c0c0c8","2018 Williams":"#4aa3ff","2012 HRT":"#c0392b","2007 Super Aguri":"#e5483a"};
 // name, team, overall, pace, racecraft, consistency, wet
@@ -148,97 +154,207 @@ const MODES={modern:["Modern 2026","Only the 2026 teams appear in the draw."],mi
 const LIMIT={driver:2,principal:1,car:1,engineer:1};
 const LABEL={driver:"Driver",principal:"Team principal",car:"Car",engineer:"Engineer"};
 const PTS=[25,18,15,12,10,8,6,4,2,1],REPLACE=68;
-
+ 
 // ---------- STATE ----------
-let view="draft",sel=[],offer=null,refreshes=2,mode="modern",spinning=false,season=null,lastRace=null;
+let view="draft",gm=null,sel=[],bsel=[],offer=null,refreshes=2,brefresh=2,mode="modern",spinning=false,botBusy=false,turns=[],ti=0,blog=[],gen=0,season=null,lastRace=null;
 const $=s=>document.querySelector(s);
 const byId=id=>ITEMS.find(i=>i.id===id);
-const picks=r=>sel.map(byId).filter(i=>i.role===r);
-const complete=()=>Object.keys(LIMIT).every(r=>picks(r).length===LIMIT[r]);
+const picks=(r,a=sel)=>a.map(byId).filter(i=>i.role===r);
+const complete=(a=sel)=>Object.keys(LIMIT).every(r=>picks(r,a).length===LIMIT[r]);
+const ready=()=>complete()&&(gm!=="versus"||complete(bsel));
 const inMode=i=>mode==="mixed"||(mode==="historic")===!!i.era;
-const eligible=()=>ITEMS.filter(i=>inMode(i)&&!sel.includes(i.id)&&picks(i.role).length<LIMIT[i.role]);
+const eligible=(a=sel)=>ITEMS.filter(i=>inMode(i)&&!sel.includes(i.id)&&!bsel.includes(i.id)&&picks(i.role,a).length<LIMIT[i.role]);
+const rc=d=>d.me?"me":d.bot?"bot":"";
+const tag=d=>d.me?" ★":d.bot?" ◆":"";
 const dot=t=>`<span class="dot" style="--c:${COL[t]}"></span>`;
-
+ 
 function card(i,pick){
   const st=i.stats?Object.entries(i.stats).map(([k,v])=>`<div class="st"><span>${k}</span><i><s style="width:${v}%"></s></i><span>${v}</span></div>`).join(""):"";
   return `<div class="card ${pick?"pick":""}" style="--c:${COL[i.team]}" ${pick?`data-id="${i.id}"`:""}>
    <div style="display:flex;justify-content:space-between"><div class="ovr">${i.ovr}</div><div class="role">${i.era?"Classic · ":""}${LABEL[i.role]}</div></div>
    <div class="nm">${i.name}</div><div class="sub">${i.sub}</div>${st}</div>`;
 }
-
+ 
 // ---------- DRAFT ----------
+const BW={driver:.2,car:.3,principal:.15,engineer:.15};
+const bscore=i=>(i.ovr-72)*BW[i.role];
+function spinReel(target,names,done){
+  let n=0;
+  const iv=setInterval(()=>{
+    const reel=$("#reel");if(!reel){clearInterval(iv);return}
+    const t=++n>15?target:pickOne(names);
+    reel.textContent=t;reel.style.setProperty("--c",COL[t]);
+    if(n>15){clearInterval(iv);setTimeout(done,500)}
+  },90);
+}
 function draw(refresh){
-  if(spinning||(refresh&&refreshes<1))return;
+  if(spinning||botBusy||(refresh&&refreshes<1))return;
   let teams=[...new Set(eligible().map(i=>i.team))];
   if(refresh){refreshes--;if(teams.length>1)teams=teams.filter(t=>t!==offer)}
-  const final=teams[Math.floor(Math.random()*teams.length)];
+  const final=pickOne(teams),all=[...new Set(eligible().map(i=>i.team))],g=gen;
   spinning=true;offer=null;render();
-  const reel=$("#reel"),all=[...new Set(eligible().map(i=>i.team))];let n=0;
-  const iv=setInterval(()=>{
-    const t=++n>16?final:all[Math.floor(Math.random()*all.length)];
-    reel.textContent=t;reel.style.setProperty("--c",COL[t]);
-    if(n>16){clearInterval(iv);spinning=false;offer=final;setTimeout(render,350)}
-  },85+n*6);
+  spinReel(final,all,()=>{if(g!==gen)return;spinning=false;offer=final;render()});
 }
-function pickItem(id){sel.push(id);offer=null;render()}
-function renderDraft(){
-  const slots=Object.keys(LIMIT).flatMap(r=>Array.from({length:LIMIT[r]},(_,n)=>{const it=picks(r)[n];
+function pickItem(id){sel.push(id);offer=null;if(gm==="versus")ti++;render();setTimeout(maybeBot,700)}
+function maybeBot(){if(gm==="versus"&&!botBusy&&!spinning&&turns[ti]==="bot"&&!complete(bsel))botTurn()}
+function botTurn(){
+  const g=gen;botBusy=true;offer=null;render();
+  const teams=[...new Set(eligible(bsel).map(i=>i.team))];
+  const best=t=>Math.max(...eligible(bsel).filter(i=>i.team===t).map(bscore));
+  const decide=t=>{
+    if(g!==gen)return;
+    const it=eligible(bsel).filter(i=>i.team===t).map(i=>({i,v:bscore(i)+gauss()*.4})).sort((x,y)=>y.v-x.v)[0].i;
+    bsel.push(it.id);blog.unshift(`Bot drew ${t} and took ${it.name} (${it.ovr})`);
+    ti++;botBusy=false;render();setTimeout(maybeBot,1500);
+  };
+  const first=pickOne(teams);
+  spinReel(first,teams,()=>{
+    if(g!==gen)return;
+    if(brefresh>0&&teams.length>1&&best(first)<1.6){
+      brefresh--;blog.unshift(`Bot refreshed away from ${first}`);
+      const t2=pickOne(teams.filter(t=>t!==first));
+      spinReel(t2,teams,()=>decide(t2));
+    } else decide(first);
+  });
+}
+function startGame(kind){
+  gen++;gm=kind;sel=[];bsel=[];blog=[];refreshes=2;brefresh=2;ti=0;offer=null;botBusy=false;spinning=false;
+  if(kind==="versus"){const a=Math.random()<.5?"you":"bot",b=a==="you"?"bot":"you";turns=[a,b,b,a,a,b,b,a,a,b]}
+  render();setTimeout(maybeBot,700);
+}
+function slotRow(a,label){
+  const s=Object.keys(LIMIT).flatMap(r=>Array.from({length:LIMIT[r]},(_,n)=>{const it=picks(r,a)[n];
     return `<div class="slot ${it?"full":""}"><small>${LABEL[r]}${LIMIT[r]>1?" "+(n+1):""}</small>${it?`${dot(it.team)}<b>${it.name}</b> · ${it.ovr}`:"Empty"}</div>`}));
+  return `<div class="role" style="margin-bottom:4px">${label}</div><div class="slots" style="margin-bottom:12px">${s.join("")}</div>`;
+}
+function renderDraft(){
+  if(!gm){
+    $("#app").innerHTML=`<div class="center"><h2>Choose your game</h2>
+     <p style="color:var(--mut);margin-bottom:12px">Which teams can appear in the draw?</p>
+     <div class="bar" style="justify-content:center">${Object.entries(MODES).map(([k,m])=>`<button class="btn ${mode===k?"red":""}" data-mode="${k}">${m[0]}</button>`).join("")}</div>
+     <p style="color:var(--mut)">${MODES[mode][1]}</p>
+     <div class="bar" style="justify-content:center;margin-top:28px"><button class="btn red big" data-gm="solo">Solo season</button><button class="btn big" data-gm="versus">Versus bot</button><button class="btn big" data-gm="sandbox">Sandbox</button></div>
+     <p style="color:var(--mut);max-width:620px;margin:0 auto">Solo: your squad races the 2026 grid. Versus: you and a bot take turns drafting from the same pool (snake order, no duplicates), then both teams race head to head across the 24-race season. Sandbox: no draw and no limits on the pool. Build any squad from every 2026 and historic driver, principal, car and engineer.</p></div>`;
+    document.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>{mode=b.dataset.mode;render()});
+    document.querySelectorAll("[data-gm]").forEach(b=>b.onclick=()=>startGame(b.dataset.gm));
+    return;
+  }
+  if(gm==="sandbox")return renderSandbox();
+  const versus=gm==="versus",yourTurn=!versus||turns[ti]==="you";
   let body="";
-  if(complete()) body=`<div class="center"><h2>Squad complete</h2><button class="btn red big" id="build">Start the 24-race season</button></div>`;
-  else if(spinning) body=`<div class="center"><div class="role">Drawing a team…</div><div class="reel" id="reel">?</div></div>`;
+  if(ready()) body=`<div class="center"><h2>${versus?"Both squads complete":"Squad complete"}</h2><button class="btn red big" id="build">Start the 24-race season</button></div>`;
+  else if(botBusy||spinning) body=`<div class="center"><div class="role">${botBusy?"Bot is drawing…":"Drawing a team…"}</div><div class="reel" id="reel">?</div></div>`;
   else if(offer){
     const items=eligible().filter(i=>i.team===offer);
     body=`<div class="center" style="padding-bottom:10px"><div class="role">You drew</div><div class="reel" style="--c:${COL[offer]};font-size:36px;padding:12px">${offer}</div><p style="color:var(--mut);margin-bottom:12px">Pick one of their available pieces, or refresh for a different team.</p><button class="btn" id="refresh" ${refreshes?"":"disabled"}>Refresh team (${refreshes} left)</button></div>
       <div class="grid">${items.map(i=>card(i,true)).join("")}</div>`;
-  } else body=`<div class="center"><h2>Pick ${sel.length+1} of 5</h2><p style="color:var(--mut);margin-bottom:20px">Draw a random team, then take one of its drivers, its car, its principal or its engineer.</p>${sel.length===0?`<div class="bar" style="justify-content:center">${Object.entries(MODES).map(([k,m])=>`<button class="btn ${mode===k?"red":""}" data-mode="${k}">${m[0]}</button>`).join("")}</div><p style="color:var(--mut);margin-bottom:20px">${MODES[mode][1]}</p>`:""}<button class="btn red big" id="draw">Draw a team</button></div>`;
-  $("#app").innerHTML=`<div class="slots">${slots.join("")}</div>${body}`;
+  } else if(!yourTurn) body=`<div class="center"><h2>Bot’s turn…</h2></div>`;
+  else body=`<div class="center"><h2>${versus?"Your pick":"Pick"} ${sel.length+1} of 5</h2><p style="color:var(--mut);margin-bottom:20px">Draw a random team, then take one of its drivers, its car, its principal or its engineer.${versus?" Anything the bot takes is gone from the pool.":""}</p><button class="btn red big" id="draw">Draw a team</button></div>`;
+  const log=versus&&blog.length?`<div class="panel" style="padding:10px 16px;font-size:13px;color:var(--mut)">${blog.slice(0,3).map(l=>`<div>◆ ${l}</div>`).join("")}</div>`:"";
+  $("#app").innerHTML=slotRow(sel,versus?"Your squad":"Your squad")+(versus?slotRow(bsel,"Bot squad ◆")+log:"")+body;
   document.querySelectorAll(".card.pick").forEach(c=>c.onclick=()=>pickItem(c.dataset.id));
-  document.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>{mode=b.dataset.mode;render()});
   if($("#draw"))$("#draw").onclick=()=>draw(false);
   if($("#refresh"))$("#refresh").onclick=()=>draw(true);
   if($("#build"))$("#build").onclick=startSeason;
 }
-
+ 
+// ---------- SANDBOX ----------
+let sbRole="all",sbEra="all",sbQ="",sbDesc=true;
+const SBR={all:"All",driver:"Drivers",principal:"Principals",car:"Cars",engineer:"Engineers"},SBE={all:"All eras",modern:"2026",historic:"Historic"};
+function sbToggle(id){
+  const it=byId(id);
+  if(sel.includes(id))sel=sel.filter(x=>x!==id);
+  else{const cur=picks(it.role);if(cur.length>=LIMIT[it.role])sel=sel.filter(x=>x!==cur[0].id);sel.push(id)}
+  sbUpdate();
+}
+function renderSandbox(){
+  $("#app").innerHTML=`<p style="color:var(--mut);font-size:13px;margin-bottom:12px">Sandbox: every 2026 and historic driver, principal, car and engineer is unlocked. Click a card to pick it or remove it; picking into a full slot replaces the old piece.</p>
+   <div id="sbslots"></div>
+   <div class="bar"><span id="sbchips" class="bar" style="margin:0"></span><input class="sbq" id="sbq" placeholder="Search name or team"><span class="sp"></span><button class="btn" id="sbclear">Clear</button><button class="btn red" id="sbgo">Start the 24-race season</button></div>
+   <div class="grid" id="sbgrid"></div>`;
+  $("#sbq").value=sbQ;
+  $("#sbq").oninput=e=>{sbQ=e.target.value;sbUpdate()};
+  $("#sbclear").onclick=()=>{sel=[];sbUpdate()};
+  $("#sbgo").onclick=startSeason;
+  sbUpdate();
+}
+function sbUpdate(){
+  const q=sbQ.trim().toLowerCase();
+  const list=ITEMS.filter(i=>(sbRole==="all"||i.role===sbRole)&&(sbEra==="all"||(sbEra==="historic")===!!i.era)&&(!q||(i.name+" "+i.team+" "+i.sub).toLowerCase().includes(q))).sort((a,b)=>sbDesc?b.ovr-a.ovr:a.ovr-b.ovr);
+  $("#sbslots").innerHTML=slotRow(sel,"Your squad · Sandbox");
+  $("#sbchips").innerHTML=Object.entries(SBR).map(([k,l])=>`<button class="chip ${sbRole===k?"on":""}" data-r="${k}">${l}</button>`).join("")+`<span style="width:8px"></span>`
+    +Object.entries(SBE).map(([k,l])=>`<button class="chip ${sbEra===k?"on":""}" data-e="${k}">${l}</button>`).join("")
+    +`<button class="chip" id="sbsort">Overall ${sbDesc?"high → low":"low → high"}</button><span class="role">${list.length} options</span>`;
+  $("#sbgrid").innerHTML=list.length?list.map(i=>card(i,true).replace('class="card pick"',sel.includes(i.id)?'class="card pick sel"':'class="card pick"')).join(""):`<div class="center" style="grid-column:1/-1;color:var(--mut)">No matches.</div>`;
+  $("#sbgo").disabled=!complete();
+  document.querySelectorAll("[data-r]").forEach(b=>b.onclick=()=>{sbRole=b.dataset.r;sbUpdate()});
+  document.querySelectorAll("[data-e]").forEach(b=>b.onclick=()=>{sbEra=b.dataset.e;sbUpdate()});
+  $("#sbsort").onclick=()=>{sbDesc=!sbDesc;sbUpdate()};
+  document.querySelectorAll(".card.pick").forEach(c=>c.onclick=()=>sbToggle(c.dataset.id));
+}
+ 
 // ---------- SEASON ----------
-function power(){
-  const d=picks("driver"),avg=(d[0].ovr+d[1].ovr)/2,p=picks("principal")[0].ovr,c=picks("car")[0].ovr,e=picks("engineer")[0].ovr;
+function power(a=sel){
+  const d=picks("driver",a),avg=(d[0].ovr+d[1].ovr)/2,p=picks("principal",a)[0].ovr,c=picks("car",a)[0].ovr,e=picks("engineer",a)[0].ovr;
   return {avg,p,c,e,total:Math.round(avg*.4+c*.3+p*.15+e*.15)};
 }
 function startSeason(){
-  const mine=picks("driver"),mineIds=mine.map(d=>d.id),taken=sel.map(byId);
-  const mc=picks("car")[0].ovr,mp=picks("principal")[0].ovr,me=picks("engineer")[0].ovr;
+  const versus=gm==="versus",mine=picks("driver"),bot=versus?picks("driver",bsel):[];
+  const used=mine.concat(bot).map(d=>d.id),taken=sel.concat(versus?bsel:[]).map(byId);
+  const kit=a=>({c:picks("car",a)[0].ovr,p:picks("principal",a)[0].ovr,e:picks("engineer",a)[0].ovr});
   const own=(arr,team,role)=>taken.some(t=>t.role===role&&t.team===team)?REPLACE:arr.find(x=>x[1]===team)[2];
-  const ex={pts:0,wins:0,pod:0,dnf:0,best:99,fin:[]};
+  const ex=()=>({pts:0,wins:0,pod:0,dnf:0,best:99,fin:[],dnfs:[]});
+  const mk=(it,team,flag,k)=>({name:it.name,team,me:flag==="me",bot:flag==="bot",ovr:it.ovr,pace:it.stats.Pace,race:it.stats.Racecraft,cons:it.stats.Consistency,wet:it.stats["Wet skill"],car:k.c,pr:k.p,en:k.e,...ex()});
   const drivers=[
-    ...DR.filter(d=>!mineIds.includes("d"+d[0])).map(d=>({name:d[0],team:d[1],me:false,ovr:d[2],pace:d[3],race:d[4],cons:d[5],wet:d[6],
-      car:own(CR,d[1],"car"),pr:own(TP,d[1],"principal"),en:own(EN,d[1],"engineer"),...ex,fin:[]})),
-    ...mine.map(it=>({name:it.name,team:"Your Team",me:true,ovr:it.ovr,pace:it.stats.Pace,race:it.stats.Racecraft,cons:it.stats.Consistency,wet:it.stats["Wet skill"],
-      car:mc,pr:mp,en:me,...ex,fin:[]}))
+    ...DR.filter(d=>!used.includes("d"+d[0])).map(d=>({name:d[0],team:d[1],me:false,ovr:d[2],pace:d[3],race:d[4],cons:d[5],wet:d[6],
+      car:own(CR,d[1],"car"),pr:own(TP,d[1],"principal"),en:own(EN,d[1],"engineer"),...ex()})),
+    ...mine.map(it=>mk(it,"Your Team","me",kit(sel))),
+    ...bot.map(it=>mk(it,"Bot Racing","bot",kit(bsel)))
   ];
-  season={race:0,drivers,teams:{},winners:[],lead:[...picks("driver")].sort((a,b)=>b.ovr-a.ovr)[0].name};
+  const top=a=>[...a].sort((x,y)=>y.ovr-x.ovr)[0].name;
+  season={race:0,drivers,teams:{},winners:[],versus,lead:top(mine),blead:versus?top(bot):null};
   lastRace=null;view="team";render();
 }
+const DNF_MECH=["Engine failure","Gearbox failure","Hydraulics leak","Brake failure","Suspension damage","Overheating","Electrical fault","Fuel pressure loss","Power unit failure"];
+const DNF_DRV=["Crashed into the wall","Spun off at high speed","Lost control under braking","Ran wide and beached in the gravel","Locked up and hit the barriers"];
+const DNF_CONTACT=["Collision with another car","Tangled at the first corner","Clipped by a rival"];
+const DNF_OTHER=["Puncture","Debris damage","Wheel nut problem at a pit stop"];
+const pickOne=a=>a[Math.floor(Math.random()*a.length)];
+function dnfReason(d,wet,laps){
+  const w=[["m",1+(100-(d.car+d.en)/2)*.06],["d",1+(100-(d.race+d.cons)/2)*.06+(wet?2:0)],["c",1.2],["o",.7]];
+  let r=Math.random()*w.reduce((a,x)=>a+x[1],0),k="o";
+  for(const [c,v] of w){if((r-=v)<=0){k=c;break}}
+  const text=k==="m"?pickOne(DNF_MECH):k==="d"?(wet&&Math.random()<.4?"Aquaplaned into the barriers":pickOne(DNF_DRV)):k==="c"?pickOne(DNF_CONTACT):pickOne(DNF_OTHER);
+  return {text,type:{m:"Mechanical",d:"Driver error",c:"Contact",o:"Bad luck"}[k],lap:k==="c"&&Math.random()<.4?1:1+Math.floor(Math.random()*(laps-1))};
+}
+const fmtTime=t=>{const h=Math.floor(t/3600),m=Math.floor(t%3600/60),x=t%60;return `${h}:${String(m).padStart(2,"0")}:${x.toFixed(3).padStart(6,"0")}`};
+const fmtGap=t=>t>=60?`${Math.floor(t/60)}:${(t%60).toFixed(3).padStart(6,"0")}`:t.toFixed(3);
+const timeCell=g=>g.dnf?"DNF":g.pos===1?fmtTime(g.time):g.down>0?`+${g.down} Lap${g.down>1?"s":""}`:"+"+fmtGap(g.gap);
 const gauss=()=>{let u=0;for(let i=0;i<6;i++)u+=Math.random();return (u-3)/Math.sqrt(.5)};
 function runRace(){
-  const wet=Math.random()<.25,name=CAL[season.race];
+  const wet=Math.random()<.25,name=CAL[season.race],laps=44+Math.floor(Math.random()*27);
   const grid=season.drivers.map(d=>{
     let skill=(d.ovr*2+d.pace+d.race)/4;if(wet)skill=skill*.6+d.wet*.4;
     const base=skill*.45+d.car*.3+d.pr*.125+d.en*.125;
     const dnf=Math.random()<.03+(100-d.cons)/1000;
-    const num=d.me?(d.name===season.lead?2:-1.5):0;
-    return {d,dnf,score:base+num+gauss()*(2+(100-d.cons)*.25)};
-  }).sort((a,b)=>(a.dnf-b.dnf)||(b.score-a.score));
+    const num=d.me?(d.name===season.lead?2:-1.5):d.bot?(d.name===season.blead?2:-1.5):0;
+    return {d,dnf,reason:dnf?dnfReason(d,wet,laps):null,score:base+num+gauss()*(2+(100-d.cons)*.25)};
+  }).sort((a,b)=>(a.dnf-b.dnf)||(a.dnf?b.reason.lap-a.reason.lap:b.score-a.score));
+  // timing: gaps from performance scores; anyone more than a lap behind is lapped
+  const lapT=78+Math.random()*24,fin=grid.filter(g=>!g.dnf),top=fin[0].score;
+  fin.forEach((g,i)=>{g.gap=i?(top-g.score)*3.5+i*.35:0;g.down=Math.floor(g.gap/lapT);g.lapsDone=laps-g.down;g.int=i?g.gap-fin[i-1].gap:0});
+  grid.filter(g=>g.dnf).forEach(g=>g.lapsDone=g.reason.lap);
+  fin[0].time=laps*lapT;
   grid.forEach((g,i)=>{
     const d=g.d,p=g.dnf?0:(PTS[i]||0);g.pos=i+1;g.pts=p;d.pts+=p;
     season.teams[d.team]=(season.teams[d.team]||0)+p;
-    if(g.dnf){d.dnf++}else{d.fin.push(i+1);d.best=Math.min(d.best,i+1);if(i===0)d.wins++;if(i<3)d.pod++}
+    if(g.dnf){d.dnf++;if(d.me)d.dnfs.push({n:season.race+1,gp:name,...g.reason})}else{d.fin.push(i+1);d.best=Math.min(d.best,i+1);if(i===0)d.wins++;if(i<3)d.pod++}
   });
   season.winners.push({name,wet,win:grid[0].d});
-  season.race++;lastRace={name,wet,grid,n:season.race};
+  season.race++;lastRace={name,wet,grid,laps,n:season.race};
 }
 const ranked=()=>[...season.drivers].sort((a,b)=>b.pts-a.pts||b.wins-a.wins||b.pod-a.pod||a.best-b.best);
-
+ 
 function renderTeam(){
   const P=power(),all=Object.keys(LIMIT).flatMap(r=>picks(r)),done=season.race>=24;
   const next=done?"":CAL[season.race];
@@ -247,22 +363,23 @@ function renderTeam(){
   <div class="panel power"><div><div class="role">Team power</div><div class="pw">${P.total}</div></div>
    <div class="parts"><div>Drivers (40%)<b>${P.avg.toFixed(1)} avg</b></div><div>Car (30%)<b>${P.c}</b></div><div>Principal (15%)<b>${P.p}</b></div><div>Engineer (15%)<b>${P.e}</b></div></div></div>
   <div class="grid" style="margin-bottom:18px">${all.map(i=>card(i)).join("")}</div>
+  ${season.versus?`<details class="panel"><summary>Bot’s squad · Team Power ${power(bsel).total}</summary><div class="grid">${Object.keys(LIMIT).flatMap(r=>picks(r,bsel)).map(i=>card(i)).join("")}</div></details>`:""}
   <div class="panel"><h2>Driver line-up</h2>
    <p style="color:var(--mut);margin-bottom:12px">Your #1 driver gets team priority (+2 performance); your #2 takes a −1.5 hit. ${season.race===0?"You can swap until the first race starts.":"Locked after the first race."}</p>
    ${[...picks("driver")].sort((x,y)=>(y.name===season.lead)-(x.name===season.lead)).map(d=>{const one=d.name===season.lead;return `<div style="display:flex;align-items:center;gap:14px;margin-bottom:8px"><b style="font-size:26px;color:${one?"var(--gold)":"var(--mut)"};width:44px;font-style:italic">#${one?1:2}</b><span style="flex:1">${dot(d.team)}<b>${d.name}</b> · ${d.ovr}</span>${!one&&season.race===0?`<button class="btn" data-lead="${d.name}">Make #1</button>`:""}</div>`}).join("")}</div>
   <div class="bar"><button class="btn red" id="next">Race ${season.race+1}: ${next} GP</button><button class="btn" id="all">Sim rest of season</button>
-   <span class="sp"></span><b>Race ${season.race} / 24</b></div>
+   <span class="sp"></span>${season.versus?`<span>You <b>${season.teams["Your Team"]||0}</b> – <b>${season.teams["Bot Racing"]||0}</b> Bot ◆</span>`:""}<b>Race ${season.race} / 24</b></div>
   <div id="last"></div>
   <div class="panel"><h2>Drivers' standings</h2><table><tr><th>Pos</th><th>Driver</th><th>Team</th><th>Pts</th><th>Wins</th><th>Podiums</th></tr>
-   ${rk.map((d,i)=>`<tr class="${d.me?"me":""}"><td>${i+1}</td><td>${d.name}${d.me?" ★":""}</td><td>${dot(d.team)}${d.team}</td><td>${d.pts}</td><td>${d.wins}</td><td>${d.pod}</td></tr>`).join("")}</table></div>`;
+   ${rk.map((d,i)=>`<tr class="${rc(d)}"><td>${i+1}</td><td>${d.name}${tag(d)}</td><td>${dot(d.team)}${d.team}</td><td>${d.pts}</td><td>${d.wins}</td><td>${d.pod}</td></tr>`).join("")}</table></div>`;
   $("#next").onclick=()=>{runRace();season.race>=24?(view="summary"):0;render()};
   document.querySelectorAll("[data-lead]").forEach(b=>b.onclick=()=>{season.lead=b.dataset.lead;render()});
   $("#all").onclick=()=>{while(season.race<24)runRace();view="summary";render()};
   if(lastRace){const r=lastRace;
-    $("#last").innerHTML=`<div class="panel"><div class="role">${r.wet?"Wet":"Dry"} · Round ${r.n}</div><h2>${r.name} GP result</h2><table><tr><th>Pos</th><th>Driver</th><th>Team</th><th>Pts</th></tr>
-    ${r.grid.map(g=>`<tr class="${g.d.me?"me":""} ${g.dnf?"dnf":""}"><td>${g.dnf?"DNF":g.pos}</td><td>${g.d.name}${g.d.me?" ★":""}</td><td>${dot(g.d.team)}${g.d.team}</td><td>${g.pts}</td></tr>`).join("")}</table></div>`}
+    $("#last").innerHTML=`<div class="panel"><div class="role">${r.wet?"Wet":"Dry"} · Round ${r.n} · ${r.laps} laps</div><h2>${r.name} GP result</h2>${r.grid.filter(g=>g.d.me&&g.dnf).map(g=>`<div class="dnfbox"><b>${g.d.name} retired on lap ${g.reason.lap}</b><br>${g.reason.type}: ${g.reason.text}</div>`).join("")}<table><tr><th>Pos</th><th>Driver</th><th>Team</th><th>Laps</th><th>Time / gap</th><th>Interval</th><th>Pts</th><th>Notes</th></tr>
+    ${r.grid.map(g=>`<tr class="${rc(g.d)} ${g.dnf?"dnf":""}"><td>${g.dnf?"DNF":g.pos}</td><td>${g.d.name}${tag(g.d)}</td><td>${dot(g.d.team)}${g.d.team}</td><td>${g.lapsDone}</td><td>${timeCell(g)}</td><td>${g.dnf||g.pos===1?"—":"+"+fmtGap(g.int)}</td><td>${g.pts}</td><td>${g.dnf?`${g.reason.type}: ${g.reason.text} (lap ${g.reason.lap})`:""}</td></tr>`).join("")}</table></div>`}
 }
-
+ 
 function renderSummary(){
   const rk=ranked(),top=rk.slice(0,3),mine=rk.filter(d=>d.me);
   const con=Object.entries(season.teams).sort((a,b)=>b[1]-a[1]);
@@ -271,28 +388,43 @@ function renderSummary(){
   const ord=n=>["1st","2nd","3rd"][n];
   const mine2=mine.map(d=>`${d.name} P${rk.indexOf(d)+1} (${d.pts} pts, ${d.wins} wins, ${d.pod} podiums)`).join(" · ");
   const tw=mine.reduce((a,d)=>a+d.wins,0),tp=mine.reduce((a,d)=>a+d.pod,0);
+  const myDnfs=mine.flatMap(d=>d.dnfs.map(x=>({...x,name:d.name}))).sort((a,b)=>a.n-b.n);
   const label=rk[0].me&&con[0][0]==="Your Team"?"DOUBLE CHAMPIONS":rk[0].me?"WORLD CHAMPION":con[0][0]==="Your Team"?"CONSTRUCTORS’ CHAMPIONS":"";
+  let h2h="";
+  if(season.versus){
+    const bd=rk.filter(d=>d.bot),sum=(a,k)=>a.reduce((x,d)=>x+d[k],0),my=season.teams["Your Team"],bt=season.teams["Bot Racing"];
+    const pos=t=>"P"+(con.findIndex(c=>c[0]===t)+1),bp=power(bsel),yp=power(sel);
+    const verdict=my>bt?"You beat the bot!":my<bt?"The bot beat you":"Dead heat with the bot";
+    const row=(l,a,b)=>`<tr><td>${l}</td><td>${a}</td><td>${b}</td></tr>`;
+    h2h=`<div class="panel"><div class="role">Head to head</div><h2 style="font-size:28px">${verdict}</h2><table><tr><th></th><th>You ★</th><th>Bot ◆</th></tr>
+     ${row("Constructors’ points",my,bt)}${row("Constructors’ position",pos("Your Team"),pos("Bot Racing"))}
+     ${row("Best driver (championship)","P"+(rk.indexOf(mine[0])+1),"P"+(rk.indexOf(bd[0])+1))}
+     ${row("Wins",sum(mine,"wins"),sum(bd,"wins"))}${row("Podiums",sum(mine,"pod"),sum(bd,"pod"))}${row("DNFs",sum(mine,"dnf"),sum(bd,"dnf"))}${row("Team Power",yp.total,bp.total)}</table></div>
+    <details class="panel"><summary>Bot’s squad · Team Power ${bp.total}</summary><div class="grid">${Object.keys(LIMIT).flatMap(r=>picks(r,bsel)).map(i=>card(i)).join("")}</div></details>`;
+  }
   $("#app").innerHTML=`
   <div class="center" style="padding-bottom:10px"><div class="role">2026 season complete</div><h2 style="font-size:34px">${top[0].name} is World Champion</h2></div>
-  <div class="podium">${[1,0,2].map(i=>`<div class="pod p${i+1}" style="--c:${COL[top[i].team]}"><div class="big">${i+1}</div><div class="nm">${top[i].name}${top[i].me?" ★":""}</div><div class="sub">${top[i].team}</div>
+  <div class="podium">${[1,0,2].map(i=>`<div class="pod p${i+1}" style="--c:${COL[top[i].team]}"><div class="big">${i+1}</div><div class="nm">${top[i].name}${tag(top[i])}</div><div class="sub">${top[i].team}</div>
    <b>${top[i].pts} pts</b><div class="sub">${top[i].wins} wins · ${top[i].pod} podiums</div></div>`).join("")}</div>
   <div class="panel"><h2>Your team: ${myCon===1?"Constructors' Champions!":"P"+myCon+" in the constructors' standings"}</h2>
    <p>${mine2}</p><p style="color:var(--mut);margin-top:6px">Combined: ${tw} win${tw===1?"":"s"}, ${tp} podium${tp===1?"":"s"}, ${season.teams["Your Team"]} constructor points.</p></div>
+  ${h2h}
   <details class="panel"><summary>Your squad · Team Power ${power().total}</summary>
    <div class="grid">${Object.keys(LIMIT).flatMap(r=>picks(r)).map(i=>card(i)).join("")}</div>
    <p style="color:var(--mut);margin-top:12px;font-size:13px">Drivers ${power().avg.toFixed(1)} avg · Car ${power().c} · Principal ${power().p} · Engineer ${power().e}. #1 driver: ${season.lead}.</p></details>
+  ${myDnfs.length?`<div class="panel"><h2>Your retirements (${myDnfs.length})</h2><table><tr><th>Race</th><th>Driver</th><th>Lap</th><th>Cause</th></tr>${myDnfs.map(x=>`<tr><td>R${x.n} ${x.gp}</td><td>${x.name}</td><td>${x.lap}</td><td>${x.type}: ${x.text}</td></tr>`).join("")}</table></div>`:""}
   <div class="panel"><h2>Season awards</h2><p>Most wins: <b>${most("wins").name}</b> (${most("wins").wins}) · Most podiums: <b>${most("pod").name}</b> (${most("pod").pod}) · Most DNFs: <b>${most("dnf").name}</b> (${most("dnf").dnf})</p></div>
   <div class="two">
    <div class="panel"><h2>Drivers' championship</h2><table><tr><th>Pos</th><th>Driver</th><th>Pts</th><th>Wins</th><th>Pod</th><th>Best</th><th>DNF</th></tr>
-    ${rk.map((d,i)=>`<tr class="${d.me?"me":""}"><td>${i+1}</td><td>${dot(d.team)}${d.name}${d.me?" ★":""}</td><td>${d.pts}</td><td>${d.wins}</td><td>${d.pod}</td><td>P${d.best>50?"-":d.best}</td><td>${d.dnf}</td></tr>`).join("")}</table></div>
+    ${rk.map((d,i)=>`<tr class="${rc(d)}"><td>${i+1}</td><td>${dot(d.team)}${d.name}${tag(d)}</td><td>${d.pts}</td><td>${d.wins}</td><td>${d.pod}</td><td>P${d.best>50?"-":d.best}</td><td>${d.dnf}</td></tr>`).join("")}</table></div>
    <div><div class="panel"><h2>Constructors' championship</h2><table><tr><th>Pos</th><th>Team</th><th>Pts</th></tr>
-    ${con.map((c,i)=>`<tr class="${c[0]==="Your Team"?"me":""}"><td>${i+1}</td><td>${dot(c[0])}${c[0]}</td><td>${c[1]}</td></tr>`).join("")}</table></div>
-   <div class="panel"><h2>Race winners</h2><table>${season.winners.map((w,i)=>`<tr class="${w.win.me?"me":""}"><td>R${i+1}</td><td>${w.name}${w.wet?" (wet)":""}</td><td>${w.win.name}</td></tr>`).join("")}</table></div></div></div>
+    ${con.map((c,i)=>`<tr class="${c[0]==="Your Team"?"me":c[0]==="Bot Racing"?"bot":""}"><td>${i+1}</td><td>${dot(c[0])}${c[0]}</td><td>${c[1]}</td></tr>`).join("")}</table></div>
+   <div class="panel"><h2>Race winners</h2><table>${season.winners.map((w,i)=>`<tr class="${rc(w.win)}"><td>R${i+1}</td><td>${w.name}${w.wet?" (wet)":""}</td><td>${w.win.name}</td></tr>`).join("")}</table></div></div></div>
   <div class="center">${label?`<button class="btn big" id="replay" style="margin-right:12px">Replay celebration</button>`:""}<button class="btn red big" id="again">Draft a new team</button></div>`;
   $("#again").onclick=reset;
   if(label){$("#replay").onclick=()=>celebrate(label);celebrate(label)}
 }
-
+ 
 // ---------- CELEBRATION: confetti + top-down car doing donuts ----------
 let celeb=null;
 const CAR_SVG=`<svg class="car" viewBox="0 0 120 50" width="120" height="50"><rect x="2" y="4" width="9" height="42" rx="2" fill="#111"/>
@@ -346,8 +478,8 @@ function celebrate(label){
   raf=requestAnimationFrame(frame);
   celeb={root,stop(){cancelAnimationFrame(raf);root.remove();if(celeb&&celeb.root===root)celeb=null}};
 }
-
-function reset(){view="draft";sel=[];offer=null;refreshes=2;spinning=false;season=null;lastRace=null;render()}
+ 
+function reset(){gen++;view="draft";gm=null;sel=[];bsel=[];blog=[];turns=[];ti=0;botBusy=false;brefresh=2;offer=null;refreshes=2;spinning=false;season=null;lastRace=null;render()}
 function render(){if(view!=="summary"&&celeb)celeb.stop();view==="draft"?renderDraft():view==="team"?renderTeam():renderSummary();window.scrollTo(0,0)}
 $("#restart").onclick=()=>{if(!season||view==="summary"||confirm("Abandon this squad and start a new draft?"))reset()};
 render();
